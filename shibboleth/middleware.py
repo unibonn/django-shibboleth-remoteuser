@@ -2,9 +2,15 @@ from django.contrib.auth.middleware import RemoteUserMiddleware
 from django.contrib.auth.models import Group
 from django.contrib import auth
 from django.core.exceptions import ImproperlyConfigured
+
 import re
 
-from shibboleth.app_settings import SHIB_ATTRIBUTE_MAP, GROUP_ATTRIBUTES, GROUP_DELIMITERS
+try:
+    from urllib.parse import unquote
+except ImportError:
+    from urlparse import unquote
+
+from shibboleth.app_settings import SHIB_ATTRIBUTE_MAP, GROUP_ATTRIBUTES, GROUP_DELIMITERS, UNQUOTE_ATTRIBUTES
 
 
 class ShibbolethRemoteUserMiddleware(RemoteUserMiddleware):
@@ -25,6 +31,8 @@ class ShibbolethRemoteUserMiddleware(RemoteUserMiddleware):
         # Locate the remote user header.
         try:
             username = request.META[self.header]
+            if UNQUOTE_ATTRIBUTES:
+                username = unquote(username)
         except KeyError:
             # If specified header doesn't exist then return (leaving
             # request.user set to AnonymousUser by the
@@ -58,7 +66,7 @@ class ShibbolethRemoteUserMiddleware(RemoteUserMiddleware):
             # by logging the user in.
             request.user = user
             auth.login(request, user)
-            
+
             # Upgrade user groups if configured in the settings.py
             # If activated, the user will be associated with those groups.
             if GROUP_ATTRIBUTES:
@@ -112,6 +120,8 @@ class ShibbolethRemoteUserMiddleware(RemoteUserMiddleware):
                 attr_processor = lambda x: x
             value = meta.get(header, None)
             if value:
+                if UNQUOTE_ATTRIBUTES:
+                    value = unquote(value)
                 shib_attrs[name] = attr_processor(value)
             elif required:
                 error = True
@@ -124,8 +134,11 @@ class ShibbolethRemoteUserMiddleware(RemoteUserMiddleware):
         """
         groups = []
         for attr in GROUP_ATTRIBUTES:
-            parsed_groups = re.split('|'.join(GROUP_DELIMITERS),
-                                     request.META.get(attr, ''))
+            value = request.META.get(attr, '')
+            if UNQUOTE_ATTRIBUTES:
+                value = unquote(value)
+
+            parsed_groups = re.split('|'.join(GROUP_DELIMITERS), value)
             groups += filter(bool, parsed_groups)
         return groups
 
